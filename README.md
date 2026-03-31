@@ -11,6 +11,7 @@ The page lives in [src/routes/+page.svelte](src/routes/+page.svelte) and sends r
 
 - Node.js and npm
 - `uvx` available in your shell
+- Ollama installed locally
 
 ## Install
 
@@ -25,6 +26,8 @@ cp .env.example .env
 ```
 
 The default mcpo base URL is configured with `mcpo_base_url`.
+The Ollama base URL is configured with `ollama_base_url`.
+The Ollama model is configured with `ollama_model`.
 
 ## Start mcpo
 
@@ -38,6 +41,8 @@ Default env value:
 
 ```sh
 mcpo_base_url=http://127.0.0.1:8000
+ollama_base_url=http://127.0.0.1:11434
+ollama_model=gemma3:1b
 ```
 
 Configured MCP servers:
@@ -55,17 +60,20 @@ npm run dev
 
 Then open the local Svelte app in your browser.
 
+Make sure Ollama is running at `ollama_base_url` with the configured model available.
+
 ## What the page does
 
 - Uses `mcpo_base_url` from `.env` for all proxied requests
 - Sends browser requests to the local `/api/mcpo` proxy route
 - The proxy forwards requests server-side to the local `mcpo` process
+- Sends mcpo responses to `/api/interpret` for Ollama summarization using `ollama_base_url`
 - Sends a fetch request with:
 	- `url`
 	- `max_length`
 - Sends a time request with:
 	- `timezone`
-- Displays either the raw response body or an error message
+- Displays the raw response body and an Ollama interpretation
 
 Default example inputs:
 

@@ -28,20 +28,9 @@ export async function POST({ request, fetch }) {
 		body: JSON.stringify(payload.body ?? {})
 	});
 
-	const contentType = mcpoResponse.headers.get('content-type') || 'text/plain; charset=utf-8';
 	const text = await mcpoResponse.text();
 
-	return new Response(text, {
+	return json({ content: text }, {
 		status: mcpoResponse.status,
-		headers: {
-			'content-type': contentType
-		}
-	});
-}
-
-export function GET() {
-	return json({
-		ok: true,
-		message: 'POST JSON to this endpoint with path and body to proxy a local mcpo request.'
 	});
 }

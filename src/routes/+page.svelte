@@ -5,21 +5,24 @@
 
 	let fetchLoading = $state(false);
 	let timeLoading = $state(false);
+	let fetchInterpretLoading = $state(false);
+	let timeInterpretLoading = $state(false);
 	let fetchError = $state('');
 	let timeError = $state('');
+	let fetchInterpretError = $state('');
+	let timeInterpretError = $state('');
 	let fetchResult = $state('');
 	let timeResult = $state('');
+	let fetchInterpretation = $state('');
+	let timeInterpretation = $state('');
 
-	async function postJson(path, body) {
-		const response = await fetch('/api/mcpo', {
+	async function postJson(url, body) {
+		const response = await fetch(url, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json'
 			},
-			body: JSON.stringify({
-				path,
-				body
-			})
+			body: JSON.stringify(body)
 		});
 
 		const text = await response.text();
@@ -38,21 +41,45 @@
 		return parsed;
 	}
 
+	async function interpretResult(tool, content) {
+		const result = await postJson('/api/interpret', {
+			tool,
+			content
+		});
+
+		return result.content;
+	}
+
 	async function runFetch() {
 		fetchLoading = true;
 		fetchError = '';
+		fetchInterpretError = '';
 		fetchResult = '';
+		fetchInterpretation = '';
 
 		try {
-			const result = await postJson('/fetch/fetch', {
-				url: fetchUrl,
-				max_length: Number(fetchMaxLength)
+			const result = await postJson('/api/mcpo', {
+				path: '/fetch/fetch',
+				body: {
+					url: fetchUrl,
+					max_length: Number(fetchMaxLength)
+				}
 			});
 
-			fetchResult = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+			const formattedResult = result.content;
+
+			fetchResult = formattedResult;
+			fetchInterpretLoading = true;
+
+			try {
+				fetchInterpretation = await interpretResult('fetch', formattedResult);
+			} catch (error) {
+				fetchInterpretError = error instanceof Error ? error.message : 'Interpretation failed';
+			}
 		} catch (error) {
 			fetchError = error instanceof Error ? error.message : 'Request failed';
 		} finally {
+			fetchInterpretLoading = false;
 			fetchLoading = false;
 		}
 	}
@@ -60,17 +87,32 @@
 	async function runTime() {
 		timeLoading = true;
 		timeError = '';
+		timeInterpretError = '';
 		timeResult = '';
+		timeInterpretation = '';
 
 		try {
-			const result = await postJson('/time/get_current_time', {
-				timezone
+			const result = await postJson('/api/mcpo', {
+				path: '/time/get_current_time',
+				body: {
+					timezone
+				}
 			});
 
-			timeResult = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+			const formattedResult = result.content;
+
+			timeResult = formattedResult;
+			timeInterpretLoading = true;
+
+			try {
+				timeInterpretation = await interpretResult('time', formattedResult);
+			} catch (error) {
+				timeInterpretError = error instanceof Error ? error.message : 'Interpretation failed';
+			}
 		} catch (error) {
 			timeError = error instanceof Error ? error.message : 'Request failed';
 		} finally {
+			timeInterpretLoading = false;
 			timeLoading = false;
 		}
 	}
@@ -116,6 +158,11 @@
 				<p>{fetchError}</p>
 			{/if}
 			<pre>{fetchResult || 'Response will appear here.'}</pre>
+			<p>Ollama interpretation</p>
+			{#if fetchInterpretError}
+				<p>{fetchInterpretError}</p>
+			{/if}
+			<pre>{fetchInterpretLoading ? 'Interpreting...' : fetchInterpretation || 'Interpretation will appear here.'}</pre>
 		</section>
 
 		<hr />
@@ -138,6 +185,11 @@
 				<p>{timeError}</p>
 			{/if}
 			<pre>{timeResult || 'Response will appear here.'}</pre>
+			<p>Ollama interpretation</p>
+			{#if timeInterpretError}
+				<p>{timeInterpretError}</p>
+			{/if}
+			<pre>{timeInterpretLoading ? 'Interpreting...' : timeInterpretation || 'Interpretation will appear here.'}</pre>
 		</section>
 	</div>
 
@@ -153,6 +205,18 @@
 			padding: 2rem 1rem 3rem;
 		}
 
+		h1,
+		h2,
+		p,
+		label,
+		button {
+			font-weight: 400;
+		}
+
+		h2 {
+			font-weight: 700;
+		}
+
 		section {
 			margin: 1.5rem 0;
 		}
@@ -163,7 +227,6 @@
 
 		label {
 			display: block;
-			font-weight: 600;
 		}
 
 		input {
@@ -177,8 +240,21 @@
 		}
 
 		button {
-			padding: 0.5rem 0.9rem;
+			padding: 0.5rem 0.75rem;
+			margin: 1rem 0 1rem;
 			font: inherit;
+			border: 1px solid;
+			background: transparent;
+			cursor: pointer;
+		}
+
+		button:hover:enabled {
+			background: rgba(0, 0, 0, 0.05);
+		}
+
+		button:disabled {
+			opacity: 0.6;
+			cursor: default;
 		}
 
 		pre {
