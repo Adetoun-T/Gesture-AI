@@ -1,330 +1,364 @@
 <script>
-	let fetchUrl = $state('https://en.wikipedia.org/wiki/Pizza');
-	let fetchMaxLength = $state(600);
-	let timezone = $state('UTC');
+  let authUrl = $state('');
+  let callbackUrl = $state('');
+  let authStatus = $state('');
+  let authLoading = $state(false);
+  let completeAuthLoading = $state(false);
+  let authError = $state('');
+  let completeAuthError = $state('');
 
-	let fetchLoading = $state(false);
-	let timeLoading = $state(false);
-	let postgresLoading = $state(false);
-	let fetchInterpretLoading = $state(false);
-	let timeInterpretLoading = $state(false);
-	let postgresInterpretLoading = $state(false);
-	let fetchError = $state('');
-	let timeError = $state('');
-	let postgresError = $state('');
-	let fetchInterpretError = $state('');
-	let timeInterpretError = $state('');
-	let postgresInterpretError = $state('');
-	let fetchResult = $state('');
-	let timeResult = $state('');
-	let postgresResult = $state('');
-	let fetchInterpretation = $state('');
-	let timeInterpretation = $state('');
-	let postgresInterpretation = $state('');
+  let playbackLoading = $state(false);
+  let playbackInterpretLoading = $state(false);
+  let playbackError = $state('');
+  let playbackInterpretError = $state('');
+  let playbackResult = $state('');
+  let playbackInterpretation = $state('');
 
-	async function postJson(url, body) {
-		const response = await fetch(url, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json'
-			},
-			body: JSON.stringify(body)
-		});
+  async function postJson(url, body) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text();
+    let parsed = text;
+    try { parsed = JSON.parse(text); } catch {}
+    if (!response.ok) {
+      throw new Error(typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2));
+    }
+    return parsed;
+  }
 
-		const text = await response.text();
-		let parsed = text;
+  async function interpretResult(tool, content) {
+    const result = await postJson('/api/interpret', { tool, content });
+    return result.content;
+  }
 
-		try {
-			parsed = JSON.parse(text);
-		} catch {
-			// Keep plain text responses as-is.
-		}
+  async function getAuthUrl() {
+    authLoading = true;
+    authError = '';
+    authUrl = '';
+    try {
+      const result = await postJson('/api/mcpo', {
+        path: '/spotify/spotify_auth_url',
+        body: {
+          scopes: [
+            'user-read-private',
+            'user-read-email',
+            'user-read-playback-state',
+            'user-modify-playback-state',
+            'user-read-currently-playing',
+            'playlist-read-private',
+            'playlist-read-collaborative'
+          ],
+          usePKCE: false
+        }
+      });
+      try {
+        const parsed = JSON.parse(result.content);
+        authUrl = parsed.url;
+      } catch {
+        authUrl = result.content;
+      }
+    } catch (e) {
+      authError = e.message;
+    } finally {
+      authLoading = false;
+    }
+  }
 
-		if (!response.ok) {
-			throw new Error(typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2));
-		}
+  async function completeAuth() {
+    completeAuthLoading = true;
+    completeAuthError = '';
+    authStatus = '';
+    try {
+      const result = await postJson('/api/mcpo', {
+        path: '/spotify/spotify_complete_auth',
+        body: { callbackUrl }
+      });
+      authStatus = result.content;
+    } catch (e) {
+      completeAuthError = e.message;
+    } finally {
+      completeAuthLoading = false;
+    }
+  }
 
-		return parsed;
-	}
+  async function runGetPlayback() {
+    playbackLoading = true;
+    playbackError = '';
+    playbackInterpretError = '';
+    playbackResult = '';
+    playbackInterpretation = '';
+    try {
+      const result = await postJson('/api/mcpo', {
+        path: '/spotify/spotify_get_playback_state',
+        body: {}
+      });
+      playbackResult = result.content;
+      playbackInterpretLoading = true;
+      try {
+        playbackInterpretation = await interpretResult('spotify-playback', playbackResult);
+      } catch (e) {
+        playbackInterpretError = e.message;
+      }
+    } catch (e) {
+      playbackError = e.message;
+    } finally {
+      playbackInterpretLoading = false;
+      playbackLoading = false;
+    }
+  }
+</script>
 
-	async function interpretResult(tool, content) {
-		const result = await postJson('/api/interpret', {
-			tool,
-			content
-		});
+<svelte:head>
+  <title>Now Playing</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+</svelte:head>
 
-		return result.content;
-	}
+<div class="page">
+  <header>
+    <h1>NOW PLAYING</h1>
+    <span class="badge">● Spotify MCP Explorer</span>
+  </header>
 
-	async function runFetch() {
-		fetchLoading = true;
-		fetchError = '';
-		fetchInterpretError = '';
-		fetchResult = '';
-		fetchInterpretation = '';
+  <section>
+    <div class="section-label">Connect Spotify</div>
+    <p class="step">01 — Generate auth URL</p>
+    <button disabled={authLoading} onclick={getAuthUrl} class="btn btn-green">
+      {authLoading ? 'Loading...' : 'Get Auth URL'}
+    </button>
+    {#if authError}<p class="error">{authError}</p>{/if}
+    {#if authUrl}
+      <div class="auth-url"><a href={authUrl} target="_blank">{authUrl}</a></div>
+      <p class="step">02 — Paste callback URL after authorizing</p>
+      <label class="field-label">Callback URL</label>
+      <input class="input" bind:value={callbackUrl} type="text" spellcheck="false" placeholder="http://127.0.0.1:8888/callback?code=..." />
+      <div style="margin-top: 8px;">
+        <button disabled={completeAuthLoading} onclick={completeAuth} class="btn">
+          {completeAuthLoading ? 'Connecting...' : 'Complete Auth'}
+        </button>
+      </div>
+      {#if completeAuthError}<p class="error">{completeAuthError}</p>{/if}
+      {#if authStatus}<pre class="raw">{authStatus}</pre>{/if}
+    {/if}
+  </section>
 
-		try {
-			const result = await postJson('/api/mcpo', {
-				path: '/fetch/fetch',
-				body: {
-					url: fetchUrl,
-					max_length: Number(fetchMaxLength)
-				}
-			});
+  <section>
+    <div class="section-label">Now Playing</div>
+    <button disabled={playbackLoading} onclick={runGetPlayback} class="btn btn-green">
+      {playbackLoading ? 'Loading...' : 'What am I listening to?'}
+    </button>
+    {#if playbackError}<p class="error">{playbackError}</p>{/if}
+    {#if playbackInterpretError}<p class="error">{playbackInterpretError}</p>{/if}
 
-			const formattedResult = result.content;
+    <div class="split">
+      <div class="split-col">
+        <label class="field-label">Raw response</label>
+        <pre class="raw">{playbackResult || 'Response will appear here.'}</pre>
+      </div>
+      <div class="split-col">
+        <label class="field-label">Ollama says —</label>
+        <div class="interpretation">
+          {playbackInterpretLoading ? 'Thinking of something witty...' : playbackInterpretation || 'Interpretation will appear here.'}
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
 
-			fetchResult = formattedResult;
-			fetchInterpretLoading = true;
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
 
-			try {
-				fetchInterpretation = await interpretResult('fetch', formattedResult);
-			} catch (error) {
-				fetchInterpretError = error instanceof Error ? error.message : 'Interpretation failed';
-			}
-		} catch (error) {
-			fetchError = error instanceof Error ? error.message : 'Request failed';
-		} finally {
-			fetchInterpretLoading = false;
-			fetchLoading = false;
-		}
-	}
+  :global(body) {
+    margin: 0;
+    background: #0a0a0a;
+    color: #f0ede6;
+    font-family: 'DM Sans', sans-serif;
+  }
 
-	async function runTime() {
-		timeLoading = true;
-		timeError = '';
-		timeInterpretError = '';
-		timeResult = '';
-		timeInterpretation = '';
+  .page {
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: 2rem 1rem 4rem;
+  }
 
-		try {
-			const result = await postJson('/api/mcpo', {
-				path: '/time/get_current_time',
-				body: {
-					timezone
-				}
-			});
+  header {
+    border-bottom: 1px solid #2a2a2a;
+    padding-bottom: 1.5rem;
+    margin-bottom: 2.5rem;
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+  }
 
-			const formattedResult = result.content;
+  h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 56px;
+    letter-spacing: 3px;
+    color: #f0ede6;
+    line-height: 1;
+    margin: 0;
+    font-weight: 400;
+  }
 
-			timeResult = formattedResult;
-			timeInterpretLoading = true;
+  .badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: #1db954;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
 
-			try {
-				timeInterpretation = await interpretResult('time', formattedResult);
-			} catch (error) {
-				timeInterpretError = error instanceof Error ? error.message : 'Interpretation failed';
-			}
-		} catch (error) {
-			timeError = error instanceof Error ? error.message : 'Request failed';
-		} finally {
-			timeInterpretLoading = false;
-			timeLoading = false;
-		}
-	}
+  section {
+    margin-bottom: 3rem;
+  }
 
-	async function runPostgres() {
-		postgresLoading = true;
-		postgresError = '';
-		postgresInterpretError = '';
-		postgresResult = '';
-		postgresInterpretation = '';
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #444;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
 
-		try {
-			const result = await postJson('/api/mcpo', {
-				path: '/postgres/list_objects',
-				body: {
-					schema_name: 'public',
-					object_type: 'table'
-				}
-			});
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #1a1a1a;
+  }
 
-			const formattedResult = result.content;
+  .step {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: #1db954;
+    letter-spacing: 2px;
+    margin: 0 0 8px;
+  }
 
-			postgresResult = formattedResult;
-			postgresInterpretLoading = true;
+  .field-label {
+    display: block;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #444;
+    margin-bottom: 4px;
+  }
 
-			try {
-				postgresInterpretation = await interpretResult('postgres', formattedResult);
-			} catch (error) {
-				postgresInterpretError = error instanceof Error ? error.message : 'Interpretation failed';
-			}
-		} catch (error) {
-			postgresError = error instanceof Error ? error.message : 'Request failed';
-		} finally {
-			postgresInterpretLoading = false;
-			postgresLoading = false;
-		}
-	}
-	</script>
+  .input {
+    background: #111;
+    border: 1px solid #222;
+    color: #f0ede6;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    padding: 10px 14px;
+    width: 100%;
+    box-sizing: border-box;
+    outline: none;
+  }
 
-	<svelte:head>
-		<title>mcpo Example</title>
-		<meta
-			name="description"
-			content="Svelte example that calls mcpo fetch and time endpoints on port 8000."
-		/>
-	</svelte:head>
+  .input:focus {
+    border-color: #1db954;
+  }
 
-	<div class="page">
-		<h1>mcpo example</h1>
-		<p>
-			Keep <code>uvx mcpo --port 8000 --config ./mcp_config.json</code> running. This page calls the local SvelteKit proxy, which forwards requests to mcpo.
-		</p>
+  .btn {
+    background: transparent;
+    border: 1px solid #f0ede6;
+    color: #f0ede6;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 10px 20px;
+    cursor: pointer;
+  }
 
-		<hr />
+  .btn:hover:enabled {
+    background: #f0ede6;
+    color: #0a0a0a;
+  }
 
-		<section>
-			<h2>Fetch</h2>
-			<p>POST /fetch/fetch</p>
-			<p>
-				<label>
-					URL
-					<input bind:value={fetchUrl} type="url" spellcheck="false" />
-				</label>
-			</p>
-			<p>
-				<label>
-					Max length
-					<input bind:value={fetchMaxLength} min="50" step="50" type="number" />
-				</label>
-			</p>
-			<p>
-				<button disabled={fetchLoading} onclick={runFetch}>
-					{fetchLoading ? 'Loading...' : 'Run fetch'}
-				</button>
-			</p>
-			{#if fetchError}
-				<p>{fetchError}</p>
-			{/if}
-			<pre>{fetchResult || 'Response will appear here.'}</pre>
-			<p>Ollama interpretation</p>
-			{#if fetchInterpretError}
-				<p>{fetchInterpretError}</p>
-			{/if}
-			<pre>{fetchInterpretLoading ? 'Interpreting...' : fetchInterpretation || 'Interpretation will appear here.'}</pre>
-		</section>
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
 
-		<hr />
+  .btn-green {
+    border-color: #1db954;
+    color: #1db954;
+  }
 
-		<section>
-			<h2>Time</h2>
-			<p>POST /time/get_current_time</p>
-			<p>
-				<label>
-					Timezone
-					<input bind:value={timezone} type="text" spellcheck="false" />
-				</label>
-			</p>
-			<p>
-				<button disabled={timeLoading} onclick={runTime}>
-					{timeLoading ? 'Loading...' : 'Get current time'}
-				</button>
-			</p>
-			{#if timeError}
-				<p>{timeError}</p>
-			{/if}
-			<pre>{timeResult || 'Response will appear here.'}</pre>
-			<p>Ollama interpretation</p>
-			{#if timeInterpretError}
-				<p>{timeInterpretError}</p>
-			{/if}
-			<pre>{timeInterpretLoading ? 'Interpreting...' : timeInterpretation || 'Interpretation will appear here.'}</pre>
-		</section>
+  .btn-green:hover:enabled {
+    background: #1db954;
+    color: #0a0a0a;
+  }
 
-		<hr />
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
 
-		<section>
-			<h2>Postgres</h2>
-			<p>POST /postgres/list_objects</p>
-			<p>Gets all tables from the <code>public</code> schema.</p>
-			<p>
-				<button disabled={postgresLoading} onclick={runPostgres}>
-					{postgresLoading ? 'Loading...' : 'Get tables'}
-				</button>
-			</p>
-			{#if postgresError}
-				<p>{postgresError}</p>
-			{/if}
-			<pre>{postgresResult || 'Response will appear here.'}</pre>
-			<p>Ollama interpretation</p>
-			{#if postgresInterpretError}
-				<p>{postgresInterpretError}</p>
-			{/if}
-			<pre>{postgresInterpretLoading ? 'Interpreting...' : postgresInterpretation || 'Interpretation will appear here.'}</pre>
-		</section>
-	</div>
+  .split-col {
+    display: flex;
+    flex-direction: column;
+  }
 
-	<style>
-		:global(body) {
-			margin: 0;
-			font-family: sans-serif;
-		}
+  .raw {
+    background: #0f0f0f;
+    border-left: 2px solid #1db954;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: #666;
+    padding: 1rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 200px;
+    margin: 0;
+    line-height: 1.6;
+    flex: 1;
+  }
 
-		.page {
-			max-width: 48rem;
-			margin: 0 auto;
-			padding: 2rem 1rem 3rem;
-		}
+  .interpretation {
+    background: #0f0f0f;
+    border-left: 2px solid #ff6b35;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    color: #c8c4bc;
+    padding: 1rem;
+    min-height: 200px;
+    line-height: 1.7;
+    font-style: italic;
+    flex: 1;
+  }
 
-		h1,
-		h2,
-		p,
-		label,
-		button {
-			font-weight: 400;
-		}
+  .auth-url {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: #1db954;
+    word-break: break-all;
+    margin: 8px 0 1rem;
+    padding: 8px;
+    background: #0f0f0f;
+    border: 1px solid #1a2a1a;
+  }
 
-		h2 {
-			font-weight: 700;
-		}
+  .auth-url a {
+    color: #1db954;
+    text-decoration: none;
+  }
 
-		section {
-			margin: 1.5rem 0;
-		}
-
-		hr {
-			margin: 2rem 0;
-		}
-
-		label {
-			display: block;
-		}
-
-		input {
-			display: block;
-			width: 100%;
-			max-width: 32rem;
-			margin-top: 0.35rem;
-			padding: 0.5rem;
-			font: inherit;
-			box-sizing: border-box;
-		}
-
-		button {
-			padding: 0.5rem 0.75rem;
-			margin: 1rem 0 1rem;
-			font: inherit;
-			border: 1px solid;
-			background: transparent;
-			cursor: pointer;
-		}
-
-		button:hover:enabled {
-			background: rgba(0, 0, 0, 0.05);
-		}
-
-		button:disabled {
-			opacity: 0.6;
-			cursor: default;
-		}
-
-		pre {
-			padding: 0.75rem;
-			border: 1px solid;
-			overflow: auto;
-			white-space: pre-wrap;
-			word-break: break-word;
-			min-height: 8rem;
-		}
-	</style>
+  .error {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: #ff4444;
+    margin: 4px 0;
+  }
+</style>

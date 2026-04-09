@@ -6,14 +6,14 @@ const FALLBACK_OLLAMA_MODEL = 'gemma3:1b';
 const ollamaBaseUrl = new URL(env.ollama_base_url || FALLBACK_OLLAMA_BASE_URL);
 const ollamaModel = env.ollama_model || FALLBACK_OLLAMA_MODEL;
 const toolPrompts = {
-	fetch: 'Give a short plain-English summary with the most important information.',
-	time: 'Interpret this time tool response for a user. State the current time clearly and mention the timezone.',
-	postgres: 'Summarize the query result briefly and mention any returned rows or key values.'
+  'spotify-playback': 'The user is currently listening to this track on Spotify. Make a short, witty, and personalized comment about their music taste based on what they are listening to. Be playful and fun, like a friend roasting their music choices.'
 };
 
+const ALLOWED_TOOLS = new Set(Object.keys(toolPrompts));
+
 function normalizeTool(input) {
-	if (input !== 'fetch' && input !== 'time' && input !== 'postgres') {
-		throw error(400, 'tool must be fetch, time, or postgres');
+	if (!ALLOWED_TOOLS.has(input)) {
+		throw error(400, `tool must be one of: ${[...ALLOWED_TOOLS].join(', ')}`);
 	}
 
 	return input;

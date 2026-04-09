@@ -1,111 +1,118 @@
-# mcpo Example
+# Spotify MCP Explorer
 
-SvelteKit example for testing two `mcpo`-exposed MCP tools from the browser:
+A SvelteKit web application that connects to Spotify via a Model Context Protocol (MCP) server, exposed as REST API endpoints using [mcpo](https://github.com/open-webui/mcpo). The app fetches your current Spotify playback state and uses a local Ollama LLM to generate witty, personalized comments about what you're listening to.
 
-- `fetch` via `POST /fetch/fetch`
-- `time` via `POST /time/get_current_time`
-- `postgres` via `POST /postgres/list_objects`
+## How It Works
 
-The page lives in [src/routes/+page.svelte](src/routes/+page.svelte) and sends requests to a local SvelteKit proxy at [src/routes/api/mcpo/+server.js](src/routes/api/mcpo/+server.js), which forwards them to the `mcpo` server configured by `mcpo_base_url`.
+1. A Spotify MCP server runs locally and handles Spotify Web API calls
+2. mcpo wraps the MCP server and exposes it as REST endpoints
+3. A SvelteKit frontend sends requests to the mcpo endpoints via a local proxy
+4. Spotify data is passed to a local Ollama model which interprets and comments on it
 
 ## Prerequisites
 
 - Node.js and npm
-- `uvx` available in your shell
-- Ollama installed locally
-- Docker Compose
+- Python and `uvx` available in your shell
+- [Ollama](https://ollama.com) installed locally
+- A Spotify Developer account with an app created at [developer.spotify.com](https://developer.spotify.com)
 
-## Install
+## Setup
 
-```sh
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/Adetoun-T/mcpo-example.git
+cd mcpo-example
 npm install
 ```
 
-Create your local env file if needed:
+### 2. Clone and build the Spotify MCP server
 
-```sh
+```bash
+git clone https://github.com/sespinosa/spotify-mcp.git
+cd spotify-mcp
+npm install
+npm run build
+cd ..
+```
+
+### 3. Configure mcpo
+
+Create a `mcp_config.json` file in the project root (do not commit this file — it contains your credentials):
+
+```json
+{
+  "mcpServers": {
+    "spotify": {
+      "command": "node",
+      "args": ["/path/to/spotify-mcp/dist/index.js"],
+      "env": {
+        "SPOTIFY_CLIENT_ID": "your_client_id",
+        "SPOTIFY_CLIENT_SECRET": "your_client_secret",
+        "SPOTIFY_REDIRECT_URI": "http://127.0.0.1:8888/callback",
+        "SPOTIFY_PERSIST_TOKENS": "true"
+      }
+    }
+  }
+}
+```
+
+Replace `/path/to/spotify-mcp` with the actual path on your machine.
+
+### 4. Configure environment variables
+
+Copy the example env file and fill in your values:
+
+```bash
 cp .env.example .env
 ```
 
-The default mcpo base URL is configured with `mcpo_base_url`.
-The Ollama base URL is configured with `ollama_base_url`.
-The Ollama model is configured with `ollama_model`.
+Set the Ollama model in `.env`:
+ollama_model=llama3.2:3b
 
-## Start Postgres
+### 5. Add redirect URI to Spotify Dashboard
 
-Start the local Postgres database defined in [docker-compose.yml](docker-compose.yml):
+In your Spotify Developer app settings, add `http://127.0.0.1:8888/callback` as an allowed redirect URI.
 
-```sh
-docker compose up -d
+### 6. Pull the Ollama model
+
+```bash
+ollama pull llama3.2:3b
 ```
 
-This starts PostgreSQL on `localhost:5432` with the credentials used in [mcp_config.json](mcp_config.json).
+## Running the App
 
-## Start mcpo
+You need three terminals running simultaneously:
 
-This project expects `mcpo` to run on port `8000` using [mcp_config.json](mcp_config.json):
+**Terminal 1 — Start Ollama:**
+```bash
+ollama serve
+```
 
-```sh
+**Terminal 2 — Start mcpo:**
+```bash
 uvx mcpo --port 8000 --config ./mcp_config.json
 ```
 
-Default env value:
-
-```sh
-mcpo_base_url=http://127.0.0.1:8000
-ollama_base_url=http://127.0.0.1:11434
-ollama_model=gemma3:1b
-```
-
-Configured MCP servers:
-
-- `fetch` using `mcp-server-fetch`
-- `time` using `mcp-server-time`
-- `postgres` using `postgres-mcp`
-
-## Run the example
-
-In a second terminal:
-
-```sh
+**Terminal 3 — Start SvelteKit:**
+```bash
 npm run dev
 ```
 
-Then open the local Svelte app in your browser.
+Then open [http://localhost:5173](http://localhost:5173) in your browser.
 
-Make sure Ollama is running at `ollama_base_url` with the configured model available.
+## Usage
 
-## What the page does
+1. Click **Get Auth URL** to generate a Spotify authorization link
+2. Open the link in your browser and authorize the app
+3. Copy the full callback URL from your browser's address bar and paste it into the app
+4. Click **Complete Auth**
+5. Click **What am I listening to?** to fetch your current track and get a witty Ollama commentary
 
-- Uses `mcpo_base_url` from `.env` for all proxied requests
-- Sends browser requests to the local `/api/mcpo` proxy route
-- The proxy forwards requests server-side to the local `mcpo` process
-- Sends mcpo responses to `/api/interpret` for Ollama summarization using `ollama_base_url`
-- Sends a fetch request with:
-	- `url`
-	- `max_length`
-- Sends a time request with:
-	- `timezone`
-- Sends a postgres request with:
-	- `schema_name`
-	- `object_type`
-- Displays the raw response body and an Ollama interpretation
+## Tech Stack
 
-Default example inputs:
-
-- Fetch URL: `https://en.wikipedia.org/wiki/Pizza`
-- Timezone: `UTC`
-- Postgres schema: `public`
-- Postgres object type: `table`
-
-## Build
-
-```sh
-npm run build
-```
-
-Preview the production build with:
-
-```sh
-npm run preview
-```
+- [SvelteKit](https://kit.svelte.dev) — frontend framework
+- [mcpo](https://github.com/open-webui/mcpo) — MCP to REST proxy
+- [sespinosa/spotify-mcp](https://github.com/sespinosa/spotify-mcp) — Spotify MCP server
+- [Ollama](https://ollama.com) — local LLM inference
+- Spotify Web API
